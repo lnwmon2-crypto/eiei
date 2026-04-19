@@ -1,4 +1,3 @@
-#Requires -RunAsAdministrator
 # ============================================================
 #  RMT TWEAK ULTRA v3.0 — FiveM / GTA V Silent Full Optimization
 #  Silent Mode: ไม่ขึ้น popup / console ใดๆ ทั้งสิ้น
