@@ -17,6 +17,7 @@ set /p key=Enter license key:
 set key=%key: =%
 
 if "%key%"=="Nel" goto ok
+if "%key%"=="cuper" goto ok
 if "%key%"=="King" goto ok
 if "%key%"=="finalpremium-27BHJ" goto ok
 if "%key%"=="finalpremium-8K2LM" goto ok
