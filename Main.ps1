@@ -1,4 +1,3 @@
-#Requires -RunAsAdministrator
 # ╔══════════════════════════════════════════════════════════════╗
 # ║         RMT TWEAK ULTRA  v4.0  — by RMT                    ║
 # ║   FiveM / GTA V  Full System Optimization  (All Specs)     ║
