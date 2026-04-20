@@ -142,6 +142,7 @@ bcdedit /set nx               OptIn     2>$null | Out-Null
 bcdedit /set x2apicpolicy     enable    2>$null | Out-Null
 # คืน core ครบ (ป้องกัน i7-13700F แสดงแค่ 8 logical processor)
 bcdedit /deletevalue numproc            2>$null | Out-Null
+bcdedit /deletevalue onecpu             2>$null | Out-Null
 bcdedit /deletevalue truncatememory     2>$null | Out-Null
 
 RegSet "HKLM:\SYSTEM\CurrentControlSet\Control\CrashControl" "AutoReboot"       0
@@ -561,7 +562,8 @@ RegSet "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" "NtfsMemoryUsage"    
     "XblAuthManager","XblGameSave","XboxGipSvc","XboxNetApiSvc",
     "WSearch","SysMain",
     "Fax","PrintNotify","RemoteRegistry","TabletInputService",
-    "WpnService","CDPSvc","OneSyncSvc","UnistoreSvc","UserDataSvc",
+    "OneSyncSvc","UnistoreSvc","UserDataSvc",
+    # WpnService ไม่ kill — NVIDIA App ต้องใช้
     "SEMgrSvc","ScDeviceEnum","SCardSvr",
     "RetailDemo","MapsBroker","PhoneSvc","MessagingService",
     "wisvc","TrkWks","MSDTC","lfsvc","icssvc",
@@ -570,8 +572,9 @@ RegSet "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" "NtfsMemoryUsage"    
     "lltdsvc","fdphost","FDResPub","SSDPSRV","upnphost",
     "WMPNetworkSvc","icssvc","SharedAccess",
     "WerSvc","wercplsupport","WerSvcHost",
-    "CscService","NcbService"
+    "CscService"
     # DoSvc ไม่ kill แล้ว — เพราะจะ enable ทันทีข้างล่าง
+    # CDPSvc, NcbService ไม่ kill — NVIDIA App ต้องใช้
 ) | ForEach-Object { SvcKill $_ }
 
 RegSet "HKLM:\SOFTWARE\Policies\Microsoft\Windows\DataCollection" "AllowTelemetry"      0
@@ -1394,10 +1397,9 @@ If ($ramGB -ge 4) { RegSet "HKLM:\SYSTEM\CurrentControlSet\Control" "SvcHostSpli
     "RemoteRegistry","RemoteAccess","SessionEnv","TermService","UmRdpService",
     # Tablet
     "TabletInputService","PenService",
-    # Notification / Push
-    "WpnService","WpnUserService",
-    # CDP / Sync
-    "CDPSvc","CDPUserSvc","OneSyncSvc","UnistoreSvc","UserDataSvc",
+    # Notification / Push — ไม่ kill WpnService/WpnUserService (NVIDIA App ใช้)
+    # CDP / Sync — ไม่ kill CDPSvc/CDPUserSvc (NVIDIA App ใช้)
+    "OneSyncSvc","UnistoreSvc","UserDataSvc",
     # Smart Card / Biometric
     "SEMgrSvc","ScDeviceEnum","SCardSvr","SCardSvr","WbioSrvc",
     # Retail / Maps / Phone
@@ -1415,7 +1417,8 @@ If ($ramGB -ge 4) { RegSet "HKLM:\SYSTEM\CurrentControlSet\Control" "SvcHostSpli
     # Error reporting
     "WerSvc","wercplsupport",
     # Connected devices / Cortana
-    "CscService","NcbService","AssignedAccessManagerSvc",
+    "CscService","AssignedAccessManagerSvc",
+    # NcbService ไม่ kill — NVIDIA App ต้องใช้
     # AMD
     "AMD External Events Utility","amdfendr",
     # Intel
@@ -1450,6 +1453,11 @@ If ($ramGB -ge 4) { RegSet "HKLM:\SYSTEM\CurrentControlSet\Control" "SvcHostSpli
     @{n="CryptSvc";    t="Automatic"},
     @{n="wuauserv";    t="Manual"}
 ) | ForEach-Object { SvcForceEnable $_.n $_.t }
+
+# คืน services ที่ NVIDIA App ต้องใช้
+SvcForceEnable "CDPSvc"     "Automatic"
+SvcForceEnable "NcbService" "Manual"
+SvcForceEnable "WpnService" "Automatic"
 
 Restart-Service lmhosts  -Force -EA SilentlyContinue
 Restart-Service nsi      -Force -EA SilentlyContinue
