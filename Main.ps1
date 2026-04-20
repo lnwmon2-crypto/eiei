@@ -1,3 +1,4 @@
+#Requires -RunAsAdministrator
 # ============================================================
 #  RMT TWEAK ULTRA v3.0 — FiveM / GTA V Silent Full Optimization
 #  Silent Mode: ไม่ขึ้น popup / console ใดๆ ทั้งสิ้น
@@ -1683,8 +1684,6 @@ RegSet "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management
 # ============================================================
 # [Z] FINAL — Apply Everything
 # ============================================================
-netsh winsock reset            2>$null | Out-Null
-netsh int ip reset             2>$null | Out-Null
 Invoke-UltraNetTcpGlobal
 netsh interface teredo    set state disabled        2>$null | Out-Null
 netsh interface isatap    set state disabled        2>$null | Out-Null
@@ -1701,3 +1700,12 @@ RegSet "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProf
 RegSet "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\RPC" "Priority" 6
 RegSet "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Windows" "LegacyDefaultPrinterMode" 0
 RegSet "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" "WriteRawData" 0
+
+# ============================================================
+# [FINAL] Network Reset + Auto Reboot
+# ============================================================
+netsh winsock reset            2>$null | Out-Null
+netsh int ip reset             2>$null | Out-Null
+
+Start-Sleep -Seconds 7
+Restart-Computer -Force
