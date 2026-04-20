@@ -2370,10 +2370,11 @@ If (Test-Path $trExe) {
     # ลบ task เก่าถ้ามี
     schtasks /delete /tn "RMT_TimerRes" /f 2>$null | Out-Null
 
-    # สร้าง task รันตอน logon แบบ hidden
+    # สร้าง task รันตอน logon แบบ hidden (ไม่โผล่ window)
     $xml = @"
 <?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.3" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo><Description>RMT Timer Resolution 0.5ms</Description></RegistrationInfo>
   <Triggers><LogonTrigger><Enabled>true</Enabled></LogonTrigger></Triggers>
   <Principals><Principal><RunLevel>HighestAvailable</RunLevel></Principal></Principals>
   <Settings>
@@ -2382,12 +2383,18 @@ If (Test-Path $trExe) {
     <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
     <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
     <Priority>0</Priority>
+    <Hidden>true</Hidden>
   </Settings>
   <Actions><Exec>
-    <Command>$trExe</Command>
+    <Command>wscript.exe</Command>
+    <Arguments>//nologo //b "$trDir\RunHidden.vbs"</Arguments>
   </Exec></Actions>
 </Task>
 "@
+
+    # VBScript wrapper — รัน TimerRes.exe โดยไม่โผล่ window เลย
+    $vbs = "CreateObject(""WScript.Shell"").Run """"""$trExe"""""", 0, False"
+    [IO.File]::WriteAllText("$trDir\RunHidden.vbs", $vbs, [Text.Encoding]::UTF8)
     $xmlPath = "$env:TEMP\RMT_TR.xml"
     [IO.File]::WriteAllText($xmlPath, $xml, [Text.Encoding]::Unicode)
     schtasks /create /tn "RMT_TimerRes" /xml $xmlPath /f 2>$null | Out-Null
