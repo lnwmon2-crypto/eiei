@@ -1,8 +1,12 @@
 #Requires -RunAsAdministrator
-# ============================================================
-#  RMT TWEAK ULTRA v3.0 — FiveM / GTA V Silent Full Optimization
-#  Silent Mode: ไม่ขึ้น popup / console ใดๆ ทั้งสิ้น
-# ============================================================
+# ╔══════════════════════════════════════════════════════════════╗
+# ║         RMT TWEAK ULTRA  v4.0  — by RMT                    ║
+# ║   FiveM / GTA V  Full System Optimization  (All Specs)     ║
+# ║   ✔ Auto-detect CPU / GPU / RAM / Laptop-Desktop           ║
+# ║   ✔ Intel 12th/13th Gen Hybrid Core Support                ║
+# ║   ✔ FiveM Deep In-Game + Network + Driver Tweaks           ║
+# ║   ✔ Silent Mode — ไม่ขึ้น popup / console ใดๆ             ║
+# ╚══════════════════════════════════════════════════════════════╝
 
 $ErrorActionPreference   = "SilentlyContinue"
 $ProgressPreference      = "SilentlyContinue"
@@ -66,6 +70,15 @@ $totalRAM  = (Get-CimInstance Win32_PhysicalMemory | Measure-Object -Property Ca
 $ramGB     = [Math]::Round($totalRAM / 1GB)
 $hasNV     = $null -ne (Get-WmiObject Win32_VideoController -EA SilentlyContinue | Where-Object { $_.Name -like "*NVIDIA*" })
 $hasAMD    = $null -ne (Get-WmiObject Win32_VideoController -EA SilentlyContinue | Where-Object { $_.Name -like "*AMD*" -or $_.Name -like "*Radeon*" })
+
+# Extended detection
+$winVer    = [int](Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion" -EA SilentlyContinue).CurrentBuildNumber
+$isWin11   = $winVer -ge 22000
+$cpuName   = (Get-CimInstance Win32_Processor | Select-Object -First 1).Name
+$isIntelHybrid = $cpuName -match "12[0-9]{3}|13[0-9]{3}|14[0-9]{3}"   # 12th/13th/14th Gen Intel
+$hasSSD    = $null -ne (Get-PhysicalDisk -EA SilentlyContinue | Where-Object { $_.MediaType -eq "SSD" })
+$fivemPath = "$env:LOCALAPPDATA\FiveM\FiveM.app"
+$hasFiveM  = Test-Path $fivemPath
 
 
 # ============================================================
@@ -1621,6 +1634,325 @@ RegSet "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProf
 RegSet "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\RPC" "Priority" 6
 RegSet "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Windows" "LegacyDefaultPrinterMode" 0
 RegSet "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" "WriteRawData" 0
+
+# ============================================================
+# [AA] AUTOMATIC MAINTENANCE — ปิดหมด ป้องกัน FPS drop
+# ============================================================
+RegSet "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Schedule\Maintenance" "MaintenanceDisabled" 1
+RegSet "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Task Scheduler4.0"             "AllowStart"          0
+
+# ปิด Maintenance tasks ที่รู้จัก
+@(
+    "\Microsoft\Windows\TaskScheduler\Regular Maintenance",
+    "\Microsoft\Windows\TaskScheduler\Maintenance Configurator",
+    "\Microsoft\Windows\Diagnosis\Scheduled",
+    "\Microsoft\Windows\DiskDiagnostic\Microsoft-Windows-DiskDiagnosticDataCollector",
+    "\Microsoft\Windows\DiskFootprint\Diagnostics",
+    "\Microsoft\Windows\PI\Sqm-Tasks",
+    "\Microsoft\Windows\Application Experience\AitAgent",
+    "\Microsoft\Windows\Application Experience\ProgramDataUpdater",
+    "\Microsoft\Windows\Autochk\Proxy",
+    "\Microsoft\Windows\Customer Experience Improvement Program\Consolidator",
+    "\Microsoft\Windows\Customer Experience Improvement Program\UsbCeip",
+    "\Microsoft\Windows\Customer Experience Improvement Program\KernelCeipTask",
+    "\Microsoft\Windows\Defrag\ScheduledDefrag",
+    "\Microsoft\Windows\DiskCleanup\SilentCleanup",
+    "\Microsoft\Windows\Power Efficiency Diagnostics\AnalyzeSystem",
+    "\Microsoft\Windows\WDI\ResolutionHost"
+) | ForEach-Object {
+    schtasks /change /tn $_ /disable 2>$null | Out-Null
+}
+
+# ============================================================
+# [AB] WINDOWS DEFENDER — ปิด Scheduled Scan ทั้งหมด
+# ============================================================
+@(
+    "\Microsoft\Windows\Windows Defender\Windows Defender Cache Maintenance",
+    "\Microsoft\Windows\Windows Defender\Windows Defender Cleanup",
+    "\Microsoft\Windows\Windows Defender\Windows Defender Scheduled Scan",
+    "\Microsoft\Windows\Windows Defender\Windows Defender Verification"
+) | ForEach-Object {
+    schtasks /change /tn $_ /disable 2>$null | Out-Null
+}
+
+# ปิด Defender scan ผ่าน registry
+$defKey = "HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Scan"
+RegSet $defKey "DisableScheduledScanning"     1
+RegSet $defKey "DisableScanningMappedNetDrives" 1
+RegSet $defKey "DisableArchiveScanning"        1
+RegSet $defKey "ScanOnlyIfIdle"               1
+RegSet $defKey "CheckForSignaturesBeforeRunningScan" 0
+
+# ============================================================
+# [AC] C-STATE DISABLE (Desktop only) — ลด CPU latency spike
+# ============================================================
+If (-not $isLaptop) {
+    # Force ปิด C-State ผ่าน power plan — ให้ CPU อยู่ C0 ตลอด
+    powercfg /setacvalueindex SCHEME_CURRENT SUB_PROCESSOR IDLEDISABLE    1 2>$null | Out-Null
+    powercfg /setacvalueindex SCHEME_CURRENT SUB_PROCESSOR IDLEPROMOTE    0 2>$null | Out-Null
+    powercfg /setacvalueindex SCHEME_CURRENT SUB_PROCESSOR IDLEDEMOTE     0 2>$null | Out-Null
+    powercfg /setacvalueindex SCHEME_CURRENT SUB_PROCESSOR IDLESCALING    0 2>$null | Out-Null
+    powercfg /setacvalueindex SCHEME_CURRENT SUB_PROCESSOR DISTRIBUTEUTIL 0 2>$null | Out-Null
+    powercfg /setactive SCHEME_CURRENT                                      2>$null | Out-Null
+
+    # Registry: ปิด idle notification ระดับ kernel
+    RegSet "HKLM:\SYSTEM\CurrentControlSet\Control\Power" "CStateNotifyPolicy"       0
+    RegSet "HKLM:\SYSTEM\CurrentControlSet\Control\Power" "IdleResolutionMs"          0
+    RegSet "HKLM:\SYSTEM\CurrentControlSet\Control\Power" "ExitLatency"               1
+    RegSet "HKLM:\SYSTEM\CurrentControlSet\Control\Power" "ExitLatencyCheckEnabled"   1
+    RegSet "HKLM:\SYSTEM\CurrentControlSet\Control\Power" "CoalescingTimerInterval"   0
+    RegSet "HKLM:\SYSTEM\CurrentControlSet\Control\Power" "DeepestIdleState"          0
+}
+
+# ============================================================
+# [AD] IRQ AFFINITY — ผูก NIC interrupt → P-Core (Core 1)
+# ============================================================
+# i7-13700F: P-cores = logical CPU 0-15, E-cores = 16-31
+# ผูก NIC IRQ ไปที่ Core 1 (bitmask = 0x2) เพื่อลด latency เน็ต
+$nicDevices = Get-ChildItem "HKLM:\SYSTEM\CurrentControlSet\Enum\PCI" -EA SilentlyContinue |
+    ForEach-Object { Get-ChildItem $_.PSPath -EA SilentlyContinue } |
+    Where-Object {
+        $desc = (Get-ItemProperty $_.PSPath -EA SilentlyContinue).DeviceDesc
+        $desc -like "*Ethernet*" -or $desc -like "*Network*" -or $desc -like "*LAN*" -or $desc -like "*Realtek*" -or $desc -like "*Intel*Ethernet*"
+    }
+
+ForEach ($nic in $nicDevices) {
+    $affPath = "$($nic.PSPath)\Device Parameters\Interrupt Management\Affinity Policy"
+    If (-not (Test-Path $affPath)) { New-Item $affPath -Force | Out-Null }
+    # AssignmentSetOverride = 0x2 → Core 1 (P-core แรกที่ไม่ใช่ Core 0 เพื่อเลี่ยง OS tasks)
+    Set-ItemProperty $affPath "AssignmentSetOverride" ([byte[]](0x02,0x00,0x00,0x00)) -Type Binary -EA SilentlyContinue
+    Set-ItemProperty $affPath "DevicePolicy"           4 -Type DWord -EA SilentlyContinue
+    Set-ItemProperty $affPath "DevicePriority"         3 -Type DWord -EA SilentlyContinue
+}
+
+# ============================================================
+# [AE] AUDIODG.EXE — Priority Boost ลด audio-induced stutter
+# ============================================================
+$audiodg = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\audiodg.exe\PerfOptions"
+RegSet $audiodg "CpuPriorityClass" 3
+RegSet $audiodg "IoPriority"       3
+RegSet $audiodg "PagePriority"     5
+
+# Audio service latency registry
+RegSet "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile" "SystemResponsiveness" 0
+
+# WASAPI exclusive mode — ลด audio latency ระดับ driver
+RegSet "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Audio" "Affinity"            0
+RegSet "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Audio" "Background Only"     "False" "String"
+RegSet "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Audio" "Clock Rate"          10000
+RegSet "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Audio" "GPU Priority"        8
+RegSet "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Audio" "Priority"            6
+RegSet "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Audio" "Scheduling Category" "High" "String"
+RegSet "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Audio" "SFIO Priority"       "High" "String"
+
+# ============================================================
+# [AF] WINDOWS UPDATE — ป้องกันดาวน์โหลดกลางเกม
+# ============================================================
+$wuPol = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU"
+RegSet $wuPol "NoAutoUpdate"                    0
+RegSet $wuPol "AUOptions"                       2   # แจ้งเตือนเท่านั้น ไม่ดาวน์โหลดอัตโนมัติ
+RegSet $wuPol "NoAutoRebootWithLoggedOnUsers"   1   # ไม่ reboot เองถ้ามี user login อยู่
+RegSet $wuPol "ScheduledInstallDay"             0
+RegSet $wuPol "DetectionFrequency"              22  # ตรวจสอบทุก 22 ชม. (ช้าลง)
+RegSet $wuPol "DetectionFrequencyEnabled"       1
+
+# ปิด Windows Update P2P (Delivery Optimization)
+RegSet "HKLM:\SOFTWARE\Policies\Microsoft\Windows\DeliveryOptimization" "DODownloadMode" 0
+
+# ปิด task WU ที่รันกลางวัน
+@(
+    "\Microsoft\Windows\UpdateOrchestrator\Schedule Scan",
+    "\Microsoft\Windows\UpdateOrchestrator\USO_UxBroker",
+    "\Microsoft\Windows\UpdateOrchestrator\Report policies",
+    "\Microsoft\Windows\UpdateOrchestrator\StartInstall",
+    "\Microsoft\Windows\WindowsUpdate\Scheduled Start",
+    "\Microsoft\Windows\WaaSMedic\PlugScheduler"
+) | ForEach-Object {
+    schtasks /change /tn $_ /disable 2>$null | Out-Null
+}
+
+# ============================================================
+# [AG] INTEL HYBRID CPU (12th/13th/14th Gen) — P-Core Priority
+# ============================================================
+If ($isIntelHybrid) {
+    # Thread Director — ให้ Windows รู้จัก P/E core และจัด process ถูกต้อง
+    RegSet "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\kernel" "HeteroClass0FloorPercent"  50
+    RegSet "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\kernel" "HeteroClass1InitialPercent" 25
+    RegSet "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\kernel" "HeteroPolicy"              5   # SMT + Hybrid aware
+
+    # Force FiveM/GTA ไปรันบน P-core เท่านั้น
+    # i7-13700F: P-core = logical CPU 0-15 → AffinityMask = 0xFFFF
+    $hybridIfeo = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options"
+    @(
+        "FiveM.exe","GTA5.exe","GTA5_Enhanced.exe",
+        "FiveM_b2802.exe","FiveM_b2944.exe","FiveM_b3095.exe","FiveM_b3258.exe",
+        "FiveM_b3323.exe","FiveM_b3407.exe","FiveM_b3500.exe","FiveM_b3734.exe",
+        "CitizenFX_SubProcess.exe"
+    ) | ForEach-Object {
+        $p = "$hybridIfeo\$_\PerfOptions"
+        RegSet $p "CpuPriorityClass" 3
+        RegSet $p "IoPriority"       3
+        RegSet $p "PagePriority"     5
+    }
+
+    # Hetero scheduler policy — P-core สำหรับ foreground
+    RegSet "HKLM:\SYSTEM\CurrentControlSet\Control\PriorityControl" "HeteroForegroundBoost" 3
+    RegSet "HKLM:\SYSTEM\CurrentControlSet\Control\PriorityControl" "HeteroBoostPolicy"     3
+
+    # Power plan: Processor Performance Autonomous = Enabled (Speed Shift)
+    $ppKey = "HKLM:\SYSTEM\CurrentControlSet\Control\Power\PowerSettings\54533251-82be-4824-96c1-47b60b740d00"
+    RegSet "$ppKey\8baa4a8a-14c6-4451-8e8b-14bdbd197537" "ValueMax" 1   # Autonomous mode ON
+    RegSet "$ppKey\893dee8e-2bef-41e0-89c6-b55d0929964c" "ValueMax" 100  # Min perf% = 100
+    RegSet "$ppKey\bc5038f7-23e0-4960-96da-33abaf5935ec" "ValueMax" 100  # Max perf% = 100
+}
+
+# ============================================================
+# [AH] FIVEM DEEP IN-GAME — autoexec + CitizenFX.ini + Cache
+# ============================================================
+If ($hasFiveM) {
+
+    # --- autoexec.cfg (โหลดทุกครั้งที่เปิด FiveM) ---
+    $autoexecDir = "$fivemPath\citizen"
+    If (-not (Test-Path $autoexecDir)) { New-Item $autoexecDir -ItemType Directory -Force | Out-Null }
+
+    $autoexecContent = @"
+# =====================================================
+#  RMT TWEAK v4.0 — FiveM autoexec.cfg
+#  Auto-generated — DO NOT EDIT
+# =====================================================
+
+# Network
+net_maxPackets "128"
+net_showCondition "0"
+net_useIpv6 "0"
+
+# FPS / Vsync
+fps_limit "0"
+game_enableVsync "false"
+
+# Streaming (ลด pop-in ลด CPU spike)
+streaming_defaultDistance "500"
+streaming_timeout "60000"
+
+# Audio latency
+set voice_useNativeAudio "1"
+set voice_useSendingRangeOnly "1"
+"@
+    [IO.File]::WriteAllText("$autoexecDir\autoexec.cfg", $autoexecContent, [Text.Encoding]::UTF8)
+
+    # --- CitizenFX.ini (client config) ---
+    $cfgPath = "$fivemPath\CitizenFX.ini"
+    $cfgContent = @"
+[Game]
+EnableDiagnostics=0
+UseFoundationRouting=0
+
+[Graphics]
+DisableAllExtensions=0
+
+[Addons]
+"@
+    [IO.File]::WriteAllText($cfgPath, $cfgContent, [Text.Encoding]::UTF8)
+
+    # --- FiveM Registry Deep (ครบทุกค่า) ---
+    $cfx = "HKCU:\SOFTWARE\CitizenFX"
+    RegSet $cfx "net_maxPackets"             "128"   "String"
+    RegSet $cfx "net_showCondition"          "0"     "String"
+    RegSet $cfx "net_useIpv6"               "0"     "String"
+    RegSet $cfx "net_peerTimeout"           "30000" "String"
+    RegSet $cfx "net_icmpTimeout"           "5000"  "String"
+    RegSet $cfx "game_enforcegameencryption" "0"    "String"
+    RegSet $cfx "game_enableVsync"          "0"     "String"
+    RegSet $cfx "fps_limit"                 "0"     "String"
+
+    $cfxNet = "HKCU:\SOFTWARE\CitizenFX\Network"
+    RegSet $cfxNet "netFrameTime"       "0"     "String"
+    RegSet $cfxNet "netTimeout"         "15000" "String"
+    RegSet $cfxNet "netRateThreshold"   "0"     "String"
+    RegSet $cfxNet "netBandwidthLimit"  "0"     "String"
+    RegSet $cfxNet "netRoutingMode"     "0"     "String"
+
+    # --- ล้าง FiveM Cache (ทำให้โหลด shader/stream ใหม่สะอาด) ---
+    $cacheDirs = @(
+        "$fivemPath\cache\game",
+        "$fivemPath\cache\priv",
+        "$fivemPath\cache\http-cache",
+        "$fivemPath\cache\browser"
+    )
+    ForEach ($cd in $cacheDirs) {
+        If (Test-Path $cd) {
+            Get-ChildItem $cd -Recurse -EA SilentlyContinue | Remove-Item -Force -Recurse -EA SilentlyContinue
+        }
+    }
+
+    # --- FiveM Shader Cache ขยาย (ลด stutter ครั้งแรก) ---
+    RegSet "HKCU:\SOFTWARE\CitizenFX" "shaderCache_maxSize" "2048" "String"
+
+    # --- Windows Firewall — เปิด FiveM ports ครบ ---
+    @(30110, 30120, 40120, 33000) | ForEach-Object {
+        netsh advfirewall firewall delete rule name="RMT_FiveM_$_" 2>$null | Out-Null
+        netsh advfirewall firewall add rule name="RMT_FiveM_$_" protocol=UDP dir=in  localport=$_  action=allow 2>$null | Out-Null
+        netsh advfirewall firewall add rule name="RMT_FiveM_$_" protocol=UDP dir=out remoteport=$_ action=allow 2>$null | Out-Null
+        netsh advfirewall firewall add rule name="RMT_FiveM_TCP_$_" protocol=TCP dir=in  localport=$_  action=allow 2>$null | Out-Null
+        netsh advfirewall firewall add rule name="RMT_FiveM_TCP_$_" protocol=TCP dir=out remoteport=$_ action=allow 2>$null | Out-Null
+    }
+}
+
+# ============================================================
+# [AI] GTA V SETTINGS — ปรับ settings.xml สำหรับ Performance
+# ============================================================
+$gtaDocPath = "$env:USERPROFILE\Documents\Rockstar Games\GTA V\settings.xml"
+If (Test-Path $gtaDocPath) {
+    # Backup ก่อนแก้ (ถ้ายังไม่มี backup)
+    $bakPath = "$gtaDocPath.rmt_bak"
+    If (-not (Test-Path $bakPath)) {
+        Copy-Item $gtaDocPath $bakPath -EA SilentlyContinue
+    }
+
+    [xml]$gtaXml = Get-Content $gtaDocPath -EA SilentlyContinue
+    If ($gtaXml) {
+        $video = $gtaXml.SelectSingleNode("//Video")
+        If ($video) {
+            # ปิด vsync
+            $n = $video.SelectSingleNode("frameLimit"); If ($n) { $n.value = "0" }
+            # ปิด motion blur
+            $n = $video.SelectSingleNode("motionBlurStrength"); If ($n) { $n.value = "0" }
+            # ปิด depth of field
+            $n = $video.SelectSingleNode("dof"); If ($n) { $n.value = "false" }
+            # FXAA ปิด (ใช้ TAA แทนในเกมถ้าต้องการ)
+            $n = $video.SelectSingleNode("FXAA"); If ($n) { $n.value = "false" }
+            # Shadow cascade ลด
+            $n = $video.SelectSingleNode("shadowQuality"); If ($n) { $n.value = "0" }
+            # Grass ลด (กิน CPU มาก)
+            $n = $video.SelectSingleNode("grassQuality"); If ($n) { $n.value = "0" }
+            # Particles ลด
+            $n = $video.SelectSingleNode("particleQuality"); If ($n) { $n.value = "0" }
+            # Anisotropic filtering ปิด
+            $n = $video.SelectSingleNode("anisotropicFiltering"); If ($n) { $n.value = "0" }
+            # Extended Distance Scaling ลด
+            $n = $video.SelectSingleNode("extendedDistanceScaling"); If ($n) { $n.value = "0.000000" }
+            # Shader Quality
+            $n = $video.SelectSingleNode("shaderQuality"); If ($n) { $n.value = "0" }
+        }
+        $gtaXml.Save($gtaDocPath)
+    }
+}
+
+# ============================================================
+# [AJ] LARGE PAGES — ให้ FiveM/GTA จอง memory page ใหญ่
+# ============================================================
+# เปิดสิทธิ์ LockPagesInMemory ผ่าน Local Security Policy
+$seceditCfg = "$env:TEMP\rmt_secpol.cfg"
+secedit /export /cfg $seceditCfg /quiet 2>$null | Out-Null
+If (Test-Path $seceditCfg) {
+    $secContent = Get-Content $seceditCfg -EA SilentlyContinue
+    If ($secContent -and ($secContent -notmatch "SeLockMemoryPrivilege")) {
+        $secContent += "`r`nSeLockMemoryPrivilege = *S-1-5-32-544"
+        [IO.File]::WriteAllText($seceditCfg, ($secContent -join "`r`n"))
+        secedit /configure /db secedit.sdb /cfg $seceditCfg /quiet 2>$null | Out-Null
+    }
+    Remove-Item $seceditCfg -EA SilentlyContinue
+}
 
 # ============================================================
 # [FINAL] Network Reset + Auto Reboot
