@@ -140,6 +140,9 @@ bcdedit /set tscsyncpolicy    Enhanced  2>$null | Out-Null
 bcdedit /set bootmenupolicy   Standard  2>$null | Out-Null
 bcdedit /set nx               OptIn     2>$null | Out-Null
 bcdedit /set x2apicpolicy     enable    2>$null | Out-Null
+# คืน core ครบ (ป้องกัน i7-13700F แสดงแค่ 8 logical processor)
+bcdedit /deletevalue numproc            2>$null | Out-Null
+bcdedit /deletevalue truncatememory     2>$null | Out-Null
 
 RegSet "HKLM:\SYSTEM\CurrentControlSet\Control\CrashControl" "AutoReboot"       0
 RegSet "HKLM:\SYSTEM\CurrentControlSet\Control\CrashControl" "CrashDumpEnabled" 0
@@ -455,16 +458,7 @@ If ($hasNV) {
     $nvSvc = "HKLM:\SYSTEM\CurrentControlSet\Services\nvlddmkm"
     RegSet $nvSvc "EnableMSHybrid"         0
     RegSet $nvSvc "DisablePowerManagement" 1
-
-    SvcForceEnable "nvlddmkm"                           "Automatic"
-    @("NVDisplay.ContainerLocalSystem","NvContainerLocalSystem","NvContainerNetworkService","NvModuleTracker") |
-        ForEach-Object { SvcForceEnable $_ "Automatic" }
-    If ($isLaptop) {
-        @("NvHybridEngD","nvsvc","NVSMService") | ForEach-Object { SvcForceEnable $_ "Automatic" }
-    }
-    Restart-Service "NVDisplay.ContainerLocalSystem" -Force -EA SilentlyContinue
-    Restart-Service "NvContainerLocalSystem"         -Force -EA SilentlyContinue
-    SvcKill "NvTelemetryContainer"
+    # ไม่ยุ่ง service NVIDIA เลย — reboot จัดการเอง
 }
 
 # ---- AMD / RADEON ----
@@ -576,8 +570,7 @@ RegSet "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" "NtfsMemoryUsage"    
     "lltdsvc","fdphost","FDResPub","SSDPSRV","upnphost",
     "WMPNetworkSvc","icssvc","SharedAccess",
     "WerSvc","wercplsupport","WerSvcHost",
-    "CscService","NcbService",
-    "NvTelemetryContainer"
+    "CscService","NcbService"
     # DoSvc ไม่ kill แล้ว — เพราะจะ enable ทันทีข้างล่าง
 ) | ForEach-Object { SvcKill $_ }
 
@@ -1423,8 +1416,6 @@ If ($ramGB -ge 4) { RegSet "HKLM:\SYSTEM\CurrentControlSet\Control" "SvcHostSpli
     "WerSvc","wercplsupport",
     # Connected devices / Cortana
     "CscService","NcbService","AssignedAccessManagerSvc",
-    # NVIDIA Telemetry
-    "NvTelemetryContainer","NvTmMon","NvTmRep",
     # AMD
     "AMD External Events Utility","amdfendr",
     # Intel
@@ -1459,18 +1450,6 @@ If ($ramGB -ge 4) { RegSet "HKLM:\SYSTEM\CurrentControlSet\Control" "SvcHostSpli
     @{n="CryptSvc";    t="Automatic"},
     @{n="wuauserv";    t="Manual"}
 ) | ForEach-Object { SvcForceEnable $_.n $_.t }
-
-# NVIDIA services
-If ($hasNV) {
-    SvcForceEnable "nvlddmkm"                           "Automatic"
-    @("NVDisplay.ContainerLocalSystem","NvContainerLocalSystem","NvContainerNetworkService","NvModuleTracker") |
-        ForEach-Object { SvcForceEnable $_ "Automatic" }
-    If ($isLaptop) {
-        @("NvHybridEngD","nvsvc","NVSMService") | ForEach-Object { SvcForceEnable $_ "Automatic" }
-    }
-    Restart-Service "NVDisplay.ContainerLocalSystem" -Force -EA SilentlyContinue
-    Restart-Service "NvContainerLocalSystem"         -Force -EA SilentlyContinue
-}
 
 Restart-Service lmhosts  -Force -EA SilentlyContinue
 Restart-Service nsi      -Force -EA SilentlyContinue
