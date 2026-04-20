@@ -952,34 +952,118 @@ RegSet $afd "TransmitIoLength"                 65536
 RegSet $afd "IgnorePushBitOnReceives"          1
 RegSet $afd "EnableRawSecurity"                0
 
-# --- QoS DSCP marking for FiveM ---
-# ทำให้ packet FiveM ได้ priority สูงสุด (DSCP EF = 46)
-$qosPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\QoS\FiveM"
-RegSet $qosPath "Version"                    "1.0"   "String"
-RegSet $qosPath "Application Name"           "FiveM.exe" "String"
-RegSet $qosPath "Protocol"                   "UDP"   "String"
-RegSet $qosPath "Local Port"                 "*"     "String"
-RegSet $qosPath "Local IP"                   "*"     "String"
-RegSet $qosPath "Local IP Prefix Length"     "*"     "String"
-RegSet $qosPath "Remote Port"                "30120" "String"
-RegSet $qosPath "Remote IP"                  "*"     "String"
-RegSet $qosPath "Remote IP Prefix Length"    "*"     "String"
-RegSet $qosPath "DSCP Value"                 "46"    "String"
-RegSet $qosPath "Throttle Rate"              "-1"    "String"
+# ============================================================
+# --- DSCP FULL — ครบทุก Policy / Port / Process / Service
+# ============================================================
+# DSCP Reference:
+#   EF  = 46 → Real-time game (highest)   CS7 = 56 → Network ctrl
+#   CS6 = 48 → Routing/control            CS5 = 40 → Signaling
+#   AF41= 34 → Video stream               AF31= 26 → Important data
+#   AF21= 18 → HTTP/HTTPS                 CS0 =  0 → Best effort
 
-# GTA5 QoS
-$qosGTA = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\QoS\GTA5"
-RegSet $qosGTA "Version"                     "1.0"    "String"
-RegSet $qosGTA "Application Name"            "GTA5.exe" "String"
-RegSet $qosGTA "Protocol"                    "*"      "String"
-RegSet $qosGTA "Local Port"                  "*"      "String"
-RegSet $qosGTA "Local IP"                    "*"      "String"
-RegSet $qosGTA "Local IP Prefix Length"      "*"      "String"
-RegSet $qosGTA "Remote Port"                 "*"      "String"
-RegSet $qosGTA "Remote IP"                   "*"      "String"
-RegSet $qosGTA "Remote IP Prefix Length"     "*"      "String"
-RegSet $qosGTA "DSCP Value"                  "46"     "String"
-RegSet $qosGTA "Throttle Rate"               "-1"     "String"
+# Helper: สร้าง QoS Policy entry
+function QosPolicy($name, $exe, $proto, $lport, $rport, $dscp) {
+    $base = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\QoS\$name"
+    RegSet $base "Version"               "1.0"   "String"
+    RegSet $base "Application Name"      $exe    "String"
+    RegSet $base "Protocol"              $proto  "String"
+    RegSet $base "Local Port"            $lport  "String"
+    RegSet $base "Local IP"              "*"     "String"
+    RegSet $base "Local IP Prefix Length" "*"    "String"
+    RegSet $base "Remote Port"           $rport  "String"
+    RegSet $base "Remote IP"             "*"     "String"
+    RegSet $base "Remote IP Prefix Length" "*"   "String"
+    RegSet $base "DSCP Value"            "$dscp" "String"
+    RegSet $base "Throttle Rate"         "-1"    "String"
+}
+
+# ลบ policy เก่าก่อน (clean slate)
+Remove-Item "HKLM:\SOFTWARE\Policies\Microsoft\Windows\QoS" -Recurse -EA SilentlyContinue
+New-Item    "HKLM:\SOFTWARE\Policies\Microsoft\Windows\QoS" -Force | Out-Null
+
+# ── FiveM — UDP ports (game traffic) → EF 46 ────────────────
+QosPolicy "FiveM_UDP_30120" "FiveM.exe"          "UDP" "*" "30120" 46
+QosPolicy "FiveM_UDP_40120" "FiveM.exe"          "UDP" "*" "40120" 46
+QosPolicy "FiveM_UDP_30110" "FiveM.exe"          "UDP" "*" "30110" 46
+QosPolicy "FiveM_UDP_33000" "FiveM.exe"          "UDP" "*" "33000" 46
+
+# ── FiveM — TCP ports (connect/auth) → EF 46 ────────────────
+QosPolicy "FiveM_TCP_30120" "FiveM.exe"          "TCP" "*" "30120" 46
+QosPolicy "FiveM_TCP_40120" "FiveM.exe"          "TCP" "*" "40120" 46
+
+# ── FiveM versioned exes ─────────────────────────────────────
+@("FiveM_b2802","FiveM_b2944","FiveM_b3095","FiveM_b3258",
+  "FiveM_b3323","FiveM_b3407","FiveM_b3500","FiveM_b3734") | ForEach-Object {
+    QosPolicy "${_}_UDP" "$_.exe" "UDP" "*" "*" 46
+    QosPolicy "${_}_TCP" "$_.exe" "TCP" "*" "*" 46
+}
+
+# ── CitizenFX subprocess → EF 46 ─────────────────────────────
+QosPolicy "CitizenFX_Sub_UDP" "CitizenFX_SubProcess.exe" "UDP" "*" "*" 46
+QosPolicy "CitizenFX_Sub_TCP" "CitizenFX_SubProcess.exe" "TCP" "*" "*" 46
+
+# ── GTA5 / GTA5 Enhanced → EF 46 ────────────────────────────
+QosPolicy "GTA5_UDP"          "GTA5.exe"          "UDP" "*" "*" 46
+QosPolicy "GTA5_TCP"          "GTA5.exe"          "TCP" "*" "*" 46
+QosPolicy "GTA5Enh_UDP"       "GTA5_Enhanced.exe" "UDP" "*" "*" 46
+QosPolicy "GTA5Enh_TCP"       "GTA5_Enhanced.exe" "TCP" "*" "*" 46
+
+# ── Rockstar Launcher → AF41 34 ──────────────────────────────
+QosPolicy "ROSLauncher"       "ROSLauncher.exe"   "*"   "*" "*" 34
+QosPolicy "GTAVLauncher"      "GTAVLauncher.exe"  "*"   "*" "*" 34
+
+# ── DNS (port 53) → CS5 40 ───────────────────────────────────
+QosPolicy "DNS_UDP_out"       "*"  "UDP" "*" "53" 40
+QosPolicy "DNS_TCP_out"       "*"  "TCP" "*" "53" 40
+
+# ── System-wide UDP game ports → EF 46 ───────────────────────
+# ครอบทุก process ที่ส่ง UDP ไป port 30120/40120 (เผื่อ FiveM รัน subproc)
+QosPolicy "Port_UDP_30120_any" "*" "UDP" "*" "30120" 46
+QosPolicy "Port_UDP_40120_any" "*" "UDP" "*" "40120" 46
+QosPolicy "Port_UDP_30110_any" "*" "UDP" "*" "30110" 46
+QosPolicy "Port_UDP_33000_any" "*" "UDP" "*" "33000" 46
+
+# ── ICMP / general network control → CS6 48 ─────────────────
+QosPolicy "ICMP_all"           "*"  "ICMP" "*" "*" 48
+
+# ── HTTP/HTTPS background → AF21 18 (ลด priority เน็ตอื่น) ──
+QosPolicy "HTTP_bg"   "svchost.exe" "TCP" "*" "80"  18
+QosPolicy "HTTPS_bg"  "svchost.exe" "TCP" "*" "443" 18
+
+# ── Windows Update / Delivery Opt → CS0 0 (ต่ำสุด) ──────────
+QosPolicy "WU_do"   "svchost.exe"       "TCP" "*" "7680"  0
+QosPolicy "WU_http" "TiWorker.exe"      "TCP" "*" "*"     0
+QosPolicy "WU_bits" "backgroundtaskhost.exe" "*" "*" "*"  0
+
+# ── qWave service — จำเป็นสำหรับ DSCP ใน Windows ────────────
+sc.exe config qwave start= auto    2>$null | Out-Null
+Set-Service   qwave -StartupType Automatic -EA SilentlyContinue
+Start-Service qwave                         -EA SilentlyContinue
+
+# ── เปิด QoS ระดับ gpedit ────────────────────────────────────
+RegSet "HKLM:\SOFTWARE\Policies\Microsoft\Windows\QOS" "Tc Supported"          1
+RegSet "HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\QoS" "Do Not Use NLA"   "1" "String"
+
+# ── WMM (Wi-Fi Multimedia) — DSCP → WMM mapping สำหรับ WiFi ─
+# ให้ router/AP รู้ว่า packet นี้ priority สูง
+$wmm = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Psched\DiffservByteMappings"
+If (-not (Test-Path $wmm)) { New-Item $wmm -Force | Out-Null }
+# DSCP EF(46) → UP6 (WMM Voice), AF41(34) → UP5 (WMM Video)
+RegSet $wmm "DSCP46" 6   # EF → WMM Voice AC_VO
+RegSet $wmm "DSCP40" 5   # CS5 → WMM Video AC_VI
+RegSet $wmm "DSCP34" 5   # AF41 → WMM Video AC_VI
+RegSet $wmm "DSCP18" 3   # AF21 → WMM Best Effort AC_BE
+RegSet $wmm "DSCP0"  0   # CS0 → WMM Background AC_BK
+
+# ── Psched DiffServ Byte Mapping ─────────────────────────────
+$dsByte = "HKLM:\SYSTEM\CurrentControlSet\Services\Psched\Parameters\Adapters"
+# ให้ Psched ส่ง DSCP ออก NIC ได้จริง (บางรุ่น NIC block)
+Get-ChildItem $dsByte -EA SilentlyContinue | ForEach-Object {
+    Set-ItemProperty $_.PSPath "LinkSpeed" 1000000000 -Type DWord -EA SilentlyContinue
+}
+
+# Apply
+gpupdate /force /wait:0 2>$null | Out-Null
 
 # --- Winsock / BSD socket tweaks ---
 RegSet "HKLM:\SYSTEM\CurrentControlSet\Services\WinSock2\Parameters" "MaxSockAddrLength"           128
@@ -1526,16 +1610,155 @@ RegSet "HKLM:\SOFTWARE\Policies\Microsoft\SQMClient\Windows" "CEIPEnable"    0
 RegSet "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Power" "HiberbootEnabled" 0
 powercfg -h off 2>$null | Out-Null
 
-# --- gpedit Network bandwidth ปลดล็อก ---
-# ปลด QoS limit 20% ที่ Windows จอง
-RegSet "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Psched"       "NonBestEffortLimit"  0
-RegSet "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Psched"       "MaxOutstandingSends" 0
-RegSet "HKLM:\SOFTWARE\Policies\Microsoft\Windows\QOS"          "Tc Supported"        1
-RegSet "HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\QoS"      "Do Not Use NLA"     "1" "String"
+# ============================================================
+# --- GPEDIT NETWORK — ครบทุก Policy ที่ปรับได้
+# ============================================================
 
-# Network Provider order — ลด lookup time
+$pol     = "HKLM:\SOFTWARE\Policies\Microsoft\Windows"
+$polHKCU = "HKCU:\Software\Policies\Microsoft\Windows"
+
+# [1] QoS / Bandwidth — ปลด 20% ที่ Windows จอง + ปรับ scheduler
+RegSet "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Psched" "NonBestEffortLimit"        0
+RegSet "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Psched" "MaxOutstandingSends"       0
+RegSet "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Psched" "MinimumPolicedSize"        0
+RegSet "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Psched" "MaximumOutstandingPackets" 0
+RegSet "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Psched" "TimerResolution"           10000
+RegSet "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Psched" "SchedulerForLocalTraffic"  1
+RegSet "HKLM:\SOFTWARE\Policies\Microsoft\Windows\QOS"    "Tc Supported"              1
+RegSet "HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\QoS" "Do Not Use NLA"           "1" "String"
+
+# [2] NCSI — ปิด Network Connectivity Status Indicator probe
+# (ลด background HTTP traffic ที่ Windows ส่งตลอด)
+$ncsi = "$pol\NetworkConnectivityStatusIndicator"
+RegSet $ncsi "NoActiveProbe"       1
+RegSet $ncsi "DisablePassivePolling" 1
+RegSet "$pol\NetworkConnectivity" "NoActiveProbe" 1
+
+# [3] DNS Client via gpedit
+$gpDns = "$pol\DNSClient"
+RegSet $gpDns "EnableMulticast"             0   # ปิด mDNS (ลด broadcast)
+RegSet $gpDns "DisableSmartNameResolution"  1   # ปิด smart name resolution
+RegSet $gpDns "DisableServersMulticastDNS"  1
+RegSet $gpDns "AppendToMultipartName"       0
+RegSet $gpDns "RegisterPTRRecords"          0   # ไม่ register reverse DNS
+RegSet $gpDns "UseDomainNameDevolution"     0
+RegSet $gpDns "AllowFQDNNetBiosQueries"     0
+RegSet "HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\DNSClient" "SearchList"          "" "String"
+RegSet "HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\DNSClient" "EnableMulticast"     0
+RegSet "HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\DNSClient" "DisableSmartNameResolution" 1
+
+# [4] BITS — ปิด background download (Windows Update / store ดาวน์โหลดหลังบ้าน)
+$bits = "$pol\BITS"
+RegSet $bits "EnableBITSMaxBandwidth"   0
+RegSet $bits "MaxBandwidthServed"       0
+RegSet $bits "MaxTransferRateOnSchedule" 0
+RegSet $bits "MaxTransferRateOffSchedule" 0
+RegSet $bits "DisableBranchCache"       1
+RegSet $bits "JobInactivityTimeout"     30
+
+# [5] Network Isolation — ปิด (ลด overhead สำหรับ gaming)
+$netIso = "$pol\NetworkIsolation"
+RegSet $netIso "DomainSubnets"                     "" "String"
+RegSet $netIso "DnsZoneSuffixes"                   "" "String"
+
+# [6] WCN (Wireless Config Notification) — ปิด
+RegSet "$pol\WCN\Registrars" "EnableRegistrars"            0
+RegSet "$pol\WCN\Registrars" "DisableWPDRegistrar"         1
+RegSet "$pol\WCN\Registrars" "DisableUPnPRegistrar"        1
+RegSet "$pol\WCN\Registrars" "DisableFlashConfigRegistrar" 1
+RegSet "$pol\WCN\Registrars" "DisableInBand802DOT11Registrar" 1
+
+# [7] Windows Connection Manager — Auto-connect policy
+$wcm = "$pol\Windows Connection Manager"
+RegSet $wcm "fBlockNonDomain"              0
+RegSet $wcm "fMinimizeConnections"         1   # ให้ใช้ connection เดียว (ลด overhead)
+
+# [8] LanmanWorkstation (SMB Client) — ลด latency SMB
+$lanClient = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\LanmanWorkstation"
+RegSet $lanClient "EnableSecuritySignature"  0   # ปิด SMB signing (ลด CPU overhead)
+RegSet $lanClient "RequireSecuritySignature" 0
+RegSet $lanClient "EnablePlainTextPassword"  0
+
+$lanClientSvc = "HKLM:\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters"
+RegSet $lanClientSvc "DisableBandwidthThrottling" 1
+RegSet $lanClientSvc "DisableLargeMtu"            0
+RegSet $lanClientSvc "FileInfoCacheEntriesMax"    32768
+RegSet $lanClientSvc "DirectoryCacheEntriesMax"   16384
+RegSet $lanClientSvc "FileNotFoundCacheEntriesMax" 16384
+RegSet $lanClientSvc "MaxCmds"                    65535
+RegSet $lanClientSvc "MaxCollectionCount"         32
+
+# [9] Offline Files — ปิดหมด (ลด disk/network overhead)
+RegSet "$pol\NetCache" "Enabled" 0
+
+# [10] Network Provider — จัด order ให้ resolve เร็วขึ้น
 $npKey = "HKLM:\SYSTEM\CurrentControlSet\Control\NetworkProvider\Order"
 Set-ItemProperty $npKey "ProviderOrder" "RDPNP,LanmanWorkstation,webclient" -Type String -EA SilentlyContinue
+$hwOrder = "HKLM:\SYSTEM\CurrentControlSet\Control\NetworkProvider\HwOrder"
+Set-ItemProperty $hwOrder "ProviderOrder" "RDPNP,LanmanWorkstation" -Type String -EA SilentlyContinue
+
+# [11] IPv6 Transition Technologies — ปิดหมด (ลด latency lookup)
+$ipv6trans = "$pol\Ipv6Transition"
+RegSet $ipv6trans "6to4_State"       "Disabled" "String"
+RegSet $ipv6trans "ISATAP_State"     "Disabled" "String"
+RegSet $ipv6trans "Teredo_State"     "Disabled" "String"
+netsh interface teredo    set state disabled       2>$null | Out-Null
+netsh interface isatap    set state disabled       2>$null | Out-Null
+netsh interface ipv6 6to4 set state state=disabled 2>$null | Out-Null
+
+# [12] Firewall — Global policy (เปิด แต่ปิด notification / log)
+$fwPol = "HKLM:\SOFTWARE\Policies\Microsoft\WindowsFirewall"
+RegSet "$fwPol\StandardProfile" "EnableFirewall"             1
+RegSet "$fwPol\StandardProfile" "DisableNotifications"       1
+RegSet "$fwPol\StandardProfile" "DisableUnicastResponsesToMulticastBroadcast" 1
+RegSet "$fwPol\DomainProfile"   "EnableFirewall"             1
+RegSet "$fwPol\DomainProfile"   "DisableNotifications"       1
+
+# [13] Windows Defender Network Inspection — ปิด NIS (กิน CPU กลางเกม)
+RegSet "HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\NIS"              "DisableProtocolRecognition" 1
+RegSet "HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\NIS\Consumers\IPS" "DisableSignatureRetirement" 1
+
+# [14] Network Throttling Index (System-wide) — ปลด throttle ทั้งหมด
+RegSet "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile" "NetworkThrottlingIndex" 0xffffffff
+RegSet "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile" "SystemResponsiveness"   0
+
+# [15] Winsock / AFD gpedit equivalents
+RegSet "HKLM:\SYSTEM\CurrentControlSet\Services\AFD\Parameters" "DefaultReceiveWindow"    256960
+RegSet "HKLM:\SYSTEM\CurrentControlSet\Services\AFD\Parameters" "DefaultSendWindow"       256960
+RegSet "HKLM:\SYSTEM\CurrentControlSet\Services\AFD\Parameters" "FastSendDatagramThreshold" 1500
+RegSet "HKLM:\SYSTEM\CurrentControlSet\Services\AFD\Parameters" "IgnorePushBitOnReceives" 1
+RegSet "HKLM:\SYSTEM\CurrentControlSet\Services\AFD\Parameters" "NonBlockingSendSpecialBuffering" 1
+RegSet "HKLM:\SYSTEM\CurrentControlSet\Services\AFD\Parameters" "EnableDynamicBacklog"    1
+RegSet "HKLM:\SYSTEM\CurrentControlSet\Services\AFD\Parameters" "MinimumDynamicBacklog"   20
+RegSet "HKLM:\SYSTEM\CurrentControlSet\Services\AFD\Parameters" "MaximumDynamicBacklog"   20000
+RegSet "HKLM:\SYSTEM\CurrentControlSet\Services\AFD\Parameters" "DynamicBacklogGrowthDelta" 10
+
+# [16] TCP/IP gpedit ระดับ policy
+$tcpParams = "HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters"
+RegSet $tcpParams "MaxUserPort"          65534
+RegSet $tcpParams "TcpTimedWaitDelay"    30
+RegSet $tcpParams "MaxFreeTcbs"          65535
+RegSet $tcpParams "MaxHashTableSize"     65536
+RegSet $tcpParams "MaxDupAcks"           2
+RegSet $tcpParams "TcpMaxSackHoles"      128
+RegSet $tcpParams "SackOpts"             1
+RegSet $tcpParams "TcpWindowSize"        65535
+RegSet $tcpParams "GlobalMaxTcpWindowSize" 8388608
+RegSet $tcpParams "Tcp1323Opts"          1
+RegSet $tcpParams "TCPNoDelay"           1
+RegSet $tcpParams "TcpAckFrequency"      1
+RegSet $tcpParams "TcpDelAckTicks"       0
+RegSet $tcpParams "DefaultTTL"           64
+RegSet $tcpParams "EnableICMPRedirect"   0
+RegSet $tcpParams "DeadGWDetectDefault"  0
+RegSet $tcpParams "DisableTaskOffload"   0
+RegSet $tcpParams "EnablePMTUDiscovery"  1
+RegSet $tcpParams "EnablePMTUBHDetect"   0
+RegSet $tcpParams "KeepAliveTime"        300000
+RegSet $tcpParams "KeepAliveInterval"    1000
+
+# Apply gpedit changes
+gpupdate /force /wait:0 2>$null | Out-Null
 
 # ============================================================
 # [X] DEFENDER + SECURITY DEEP
