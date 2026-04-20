@@ -172,59 +172,13 @@ Get-ChildItem "HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfac
 }
 
 $tcp = "HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters"
-RegSet $tcp "DefaultTTL"                   64
-RegSet $tcp "MaxUserPort"                  65534
-RegSet $tcp "TcpTimedWaitDelay"            30
-RegSet $tcp "TCPMaxDupAcks"               2
-RegSet $tcp "SackOpts"                     1
-RegSet $tcp "Tcp1323Opts"                  1
-RegSet $tcp "EnablePMTUDiscovery"          1
-RegSet $tcp "GlobalMaxTcpWindowSize"       16777216
-RegSet $tcp "TcpWindowSize"               16777216
-RegSet $tcp "MaxDupAcksForFastRetransmit" 2
-RegSet $tcp "TCPMaxConnectRetransmissions" 2
-RegSet $tcp "DisableTaskOffload"           0
-RegSet $tcp "EnableDCA"                    1
-RegSet $tcp "MaxFreeTcbs"                  65536
-RegSet $tcp "MaxHashTableSize"             65536
-RegSet $tcp "MaxConnections"               0xffffffff
-RegSet $tcp "TcpMaxSackBlocks"             8
-RegSet $tcp "EnableTCPChimney"             0
-RegSet $tcp "EnableRSS"                    1
-RegSet $tcp "EnableTCPA"                   1
-RegSet $tcp "TCPInitialRTT"                3
-RegSet $tcp "KeepAliveTime"                7200000
-RegSet $tcp "KeepAliveInterval"            1000
-RegSet $tcp "NumTcbTablePartitions"        4
-RegSet $tcp "MaxNormLookupMemory"          0x3000000
-RegSet $tcp "SynAttackProtect"             0
-RegSet $tcp "DeadGWDetectDefault"          0
+# (TCP parameters set ครบในส่วน [Q] ด้านล่าง)
 
 $afd = "HKLM:\SYSTEM\CurrentControlSet\Services\AFD\Parameters"
-RegSet $afd "DefaultReceiveWindow"            1048576
-RegSet $afd "DefaultSendWindow"              1048576
-RegSet $afd "FastSendDatagramThreshold"      1500
-RegSet $afd "MaxFastTransmit"                32
-RegSet $afd "NonBlockingSendSpecialBuffering" 1
-RegSet $afd "DynamicSendBufferDisable"        0
-RegSet $afd "MaxBufferredReceiveBytes"        33554432
-RegSet $afd "MaxBufferredSendBytes"           33554432
-RegSet $afd "DoNotForceSendAlways"            1
-RegSet $afd "EnableDynamicBacklog"            1
-RegSet $afd "MinimumDynamicBacklog"           20
-RegSet $afd "MaximumDynamicBacklog"           65535
-RegSet $afd "DynamicBacklogGrowthDelta"       10
-RegSet $afd "IrpStackSize"                    14
-RegSet $afd "PriorityBoost"                   1
-RegSet $afd "TransmitIoLength"                65536
+# (AFD parameters set ครบในส่วน [Q] ด้านล่าง)
 
 RegSet "HKLM:\SYSTEM\CurrentControlSet\Services\WinSock2\Parameters" "MaxSockAddrLength" 128
 RegSet "HKLM:\SYSTEM\CurrentControlSet\Services\WinSock2\Parameters" "MinSockAddrLength" 16
-
-Invoke-UltraNetTcpGlobal
-netsh interface teredo    set state disabled        2>$null | Out-Null
-netsh interface isatap    set state disabled        2>$null | Out-Null
-netsh interface ipv6 6to4 set state state=disabled  2>$null | Out-Null
 
 RegSet "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Psched" "NonBestEffortLimit"  0
 RegSet "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Psched" "MaxOutstandingSends" 0
@@ -503,18 +457,13 @@ If ($hasNV) {
     RegSet $nvSvc "DisablePowerManagement" 1
 
     SvcForceEnable "nvlddmkm"                           "Automatic"
-    Start-Sleep -Milliseconds 500
     @("NVDisplay.ContainerLocalSystem","NvContainerLocalSystem","NvContainerNetworkService","NvModuleTracker") |
         ForEach-Object { SvcForceEnable $_ "Automatic" }
-    Start-Sleep -Milliseconds 500
     If ($isLaptop) {
         @("NvHybridEngD","nvsvc","NVSMService") | ForEach-Object { SvcForceEnable $_ "Automatic" }
     }
-    Start-Sleep -Milliseconds 300
     Restart-Service "NVDisplay.ContainerLocalSystem" -Force -EA SilentlyContinue
-    Start-Sleep -Milliseconds 300
     Restart-Service "NvContainerLocalSystem"         -Force -EA SilentlyContinue
-
     SvcKill "NvTelemetryContainer"
 }
 
@@ -659,15 +608,10 @@ SvcForceEnable "AudioSrv"    "Automatic"
 SvcForceEnable "AudioEndpointBuilder" "Automatic"
 SvcForceEnable "Themes"      "Automatic"
 
-Start-Sleep -Milliseconds 500
 Restart-Service lmhosts  -Force -EA SilentlyContinue
-Start-Sleep -Milliseconds 300
 Restart-Service nsi      -Force -EA SilentlyContinue
-Start-Sleep -Milliseconds 300
 Restart-Service netprofm -Force -EA SilentlyContinue
-Start-Sleep -Milliseconds 500
 Restart-Service NlaSvc   -Force -EA SilentlyContinue
-Start-Sleep -Milliseconds 300
 Restart-Service Netman   -Force -EA SilentlyContinue
 
 # ============================================================
@@ -886,9 +830,8 @@ bcdedit /set firstmegabytepolicy     UseAll   2>$null | Out-Null
 bcdedit /set avoidlowmemory          0x8000000 2>$null | Out-Null
 bcdedit /set nolowmem                no       2>$null | Out-Null
 
-# --- Hyper-V / VBS ปิด (เพิ่ม FPS ~5-15%) ---
+# Hyper-V / VBS ปิด
 bcdedit /set vsmlaunchtype           off      2>$null | Out-Null
-dism /Online /Disable-Feature /FeatureName:Microsoft-Hyper-V-All /NoRestart /Quiet 2>$null | Out-Null
 RegSet "HKLM:\SYSTEM\CurrentControlSet\Control\DeviceGuard" "EnableVirtualizationBasedSecurity" 0
 RegSet "HKLM:\SYSTEM\CurrentControlSet\Control\DeviceGuard" "RequirePlatformSecurityFeatures"   0
 
@@ -1520,27 +1463,19 @@ If ($ramGB -ge 4) { RegSet "HKLM:\SYSTEM\CurrentControlSet\Control" "SvcHostSpli
 # NVIDIA services
 If ($hasNV) {
     SvcForceEnable "nvlddmkm"                           "Automatic"
-    Start-Sleep -Milliseconds 500
     @("NVDisplay.ContainerLocalSystem","NvContainerLocalSystem","NvContainerNetworkService","NvModuleTracker") |
         ForEach-Object { SvcForceEnable $_ "Automatic" }
     If ($isLaptop) {
         @("NvHybridEngD","nvsvc","NVSMService") | ForEach-Object { SvcForceEnable $_ "Automatic" }
     }
-    Start-Sleep -Milliseconds 300
     Restart-Service "NVDisplay.ContainerLocalSystem" -Force -EA SilentlyContinue
-    Start-Sleep -Milliseconds 300
     Restart-Service "NvContainerLocalSystem"         -Force -EA SilentlyContinue
 }
 
-Start-Sleep -Milliseconds 500
 Restart-Service lmhosts  -Force -EA SilentlyContinue
-Start-Sleep -Milliseconds 200
 Restart-Service nsi      -Force -EA SilentlyContinue
-Start-Sleep -Milliseconds 200
 Restart-Service netprofm -Force -EA SilentlyContinue
-Start-Sleep -Milliseconds 300
 Restart-Service NlaSvc   -Force -EA SilentlyContinue
-Start-Sleep -Milliseconds 200
 Restart-Service Netman   -Force -EA SilentlyContinue
 
 # Re-enable DoSvc หลัง kill
@@ -1667,14 +1602,13 @@ Start-Service wuauserv -EA SilentlyContinue
 # DNS flush
 ipconfig /flushdns 2>$null | Out-Null
 
-# Event logs
-wevtutil el 2>$null | ForEach-Object { wevtutil cl "$_" 2>$null | Out-Null }
+# Event logs (ข้ามเพื่อความเร็ว)
+# wevtutil el | ForEach-Object { wevtutil cl "$_" } — ตัดออกเพราะช้ามาก
 
 # Icon cache rebuild
 Stop-Process -Name explorer -Force -EA SilentlyContinue
 Remove-Item "$env:LOCALAPPDATA\IconCache.db" -Force -EA SilentlyContinue
 Remove-Item "$env:LOCALAPPDATA\Microsoft\Windows\Explorer\iconcache*" -Force -EA SilentlyContinue
-Start-Sleep -Milliseconds 500
 Start-Process explorer
 
 # Prefetch ปิด
